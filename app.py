@@ -8,6 +8,7 @@ import tempfile
 import numpy as np
 import gradio as gr
 import soundfile as sf
+import whisper
 from transformers import AutoModel
 
 warnings.filterwarnings("ignore", message=".*copying from a non-meta parameter.*")
@@ -20,11 +21,25 @@ def load_audio_from_url(url):
         return sample_rate, audio_data
     return None, None
 
+# Function to transcribe audio using Whisper
+def transcribe_audio(ref_audio):
+    if ref_audio is None:
+        return ""
+
+    sample_rate, audio_data = ref_audio
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+        sf.write(temp_audio.name, audio_data, samplerate=sample_rate, format='WAV')
+        temp_audio.flush()
+        result = whisper_model.transcribe(temp_audio.name)
+        return result["text"]
+
 @spaces.GPU
-def synthesize_speech(text, ref_audio, ref_text):
-    if ref_audio is None or ref_text.strip() == "":
-        return "Error: Please provide a reference audio and its corresponding text."
+def synthesize_speech(text, ref_audio):
+    if ref_audio is None:
+        return "Error: Please provide a reference audio."
     
+    ref_text = transcribe_audio(ref_audio)
+
     # Ensure valid reference audio input
     if isinstance(ref_audio, tuple) and len(ref_audio) == 2:
         sample_rate, audio_data = ref_audio
@@ -51,6 +66,9 @@ model = AutoModel.from_pretrained(repo_id, trust_remote_code=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device", device)
 model = model.to(device)
+
+# Load Whisper model
+whisper_model = whisper.load_model("base")
 
 # Example Data (Multiple Examples)
 EXAMPLES = [
@@ -115,7 +133,6 @@ with gr.Blocks() as iface:
         with gr.Column():
             text_input = gr.Textbox(label="Text to Synthesize", placeholder="Enter the text to convert to speech...", lines=3)
             ref_audio_input = gr.Audio(type="numpy", label="Reference Prompt Audio")
-            ref_text_input = gr.Textbox(label="Text in Reference Prompt Audio", placeholder="Enter the transcript of the reference audio...", lines=2)
             submit_btn = gr.Button("🎤 Generate Speech", variant="primary")
         
         with gr.Column():
@@ -123,16 +140,16 @@ with gr.Blocks() as iface:
     
     # Add multiple examples
     examples = [
-        [ex["synth_text"], (ex["sample_rate"], ex["audio_data"]), ex["ref_text"]] for ex in EXAMPLES
+        [ex["synth_text"], (ex["sample_rate"], ex["audio_data"])] for ex in EXAMPLES
     ]
     
     gr.Examples(
         examples=examples,
-        inputs=[text_input, ref_audio_input, ref_text_input],
+        inputs=[text_input, ref_audio_input],
         label="Choose an example:"
     )
 
-    submit_btn.click(synthesize_speech, inputs=[text_input, ref_audio_input, ref_text_input], outputs=[output_audio])
+    submit_btn.click(synthesize_speech, inputs=[text_input, ref_audio_input], outputs=[output_audio])
 
 
 iface.launch()
