@@ -51,7 +51,8 @@ def transcribe_audio(ref_audio):
 def synthesize_speech(text, ref_audio):
     if ref_audio is None:
         return "Error: Please provide a reference audio."
-    
+
+    # Transcribe the reference audio to get the reference text
     ref_text = transcribe_audio(ref_audio)
 
     # Ensure valid reference audio input
@@ -60,18 +61,19 @@ def synthesize_speech(text, ref_audio):
     else:
         return "Error: Invalid reference audio input."
     
-    # Save reference audio directly without resampling
+    # Save reference audio to a temporary file
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
         sf.write(temp_audio.name, audio_data, samplerate=sample_rate, format='WAV')
         temp_audio.flush()
-    
-    audio = model(text, ref_audio_path=temp_audio.name, ref_text=ref_text)
+
+        # Generate speech using the model
+        audio = model(text, ref_audio_path=temp_audio.name, ref_text=ref_text)
              
-    # Normalize output and save
+    # Normalize output
     if audio.dtype == np.int16:
         audio = audio.astype(np.float32) / 32768.0
 
-    return 24000, audio
+    return ref_text, (24000, audio)
 
 
 # Load TTS model
@@ -153,15 +155,19 @@ with gr.Blocks() as iface:
         [ex["synth_text"], (ex["sample_rate"], ex["audio_data"]), ex["ref_text"]] for ex in EXAMPLES
     ]
     
-    ref_audio_input.change(transcribe_audio, inputs=[ref_audio_input], outputs=[ref_text_input])
+    submit_btn.click(
+        synthesize_speech,
+        inputs=[text_input, ref_audio_input],
+        outputs=[ref_text_input, output_audio]
+    )
 
     gr.Examples(
         examples=examples,
         inputs=[text_input, ref_audio_input, ref_text_input],
-        label="Choose an example:"
+        label="Choose an example:",
+        fn=synthesize_speech,
+        outputs=[ref_text_input, output_audio]
     )
-
-    submit_btn.click(synthesize_speech, inputs=[text_input, ref_audio_input], outputs=[output_audio])
 
 
 iface.launch()
