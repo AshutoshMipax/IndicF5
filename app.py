@@ -50,7 +50,7 @@ def transcribe_audio(ref_audio):
 @spaces.GPU
 def synthesize_speech(text, ref_audio):
     if ref_audio is None:
-        return "Error: Please provide a reference audio."
+        return {"transcription": "Error: Please provide a reference audio.", "audio": None}
 
     # Transcribe the reference audio to get the reference text
     ref_text = transcribe_audio(ref_audio)
@@ -59,7 +59,7 @@ def synthesize_speech(text, ref_audio):
     if isinstance(ref_audio, tuple) and len(ref_audio) == 2:
         sample_rate, audio_data = ref_audio
     else:
-        return "Error: Invalid reference audio input."
+        return {"transcription": "Error: Invalid reference audio input.", "audio": None}
     
     # Save reference audio to a temporary file
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
@@ -73,7 +73,7 @@ def synthesize_speech(text, ref_audio):
     if audio.dtype == np.int16:
         audio = audio.astype(np.float32) / 32768.0
 
-    return ref_text, (24000, audio)
+    return {"transcription": ref_text, "audio": (24000, audio)}
 
 
 # Load TTS model
@@ -159,13 +159,21 @@ with gr.Blocks() as iface:
         synthesize_speech,
         inputs=[text_input, ref_audio_input],
         outputs=[ref_text_input, output_audio]
+    ).then(
+        lambda x: x["transcription"],
+        inputs=[output_audio],
+        outputs=[ref_text_input]
+    ).then(
+        lambda x: x["audio"],
+        inputs=[output_audio],
+        outputs=[output_audio]
     )
 
     gr.Examples(
         examples=examples,
         inputs=[text_input, ref_audio_input, ref_text_input],
         label="Choose an example:",
-        fn=synthesize_speech,
+        fn=lambda text, ref_audio, ref_text: synthesize_speech(text, ref_audio),
         outputs=[ref_text_input, output_audio]
     )
 
